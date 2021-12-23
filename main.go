@@ -30,6 +30,21 @@ func main() {
 
 		c.JSON(http.StatusOK, gin.H{"status": "user created"})
 	})
+	// curl -d '{"usernames": ["manu"], "groupname": "group1"}' -H "Content-Type: application/json" -X POST localhost:8080/groups
+	r.POST("/groups", func(c *gin.Context) {
+		var json GroupCreation
+		if err := c.ShouldBindJSON(&json); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		if json.GroupName != "group1" {
+			c.JSON(http.StatusUnauthorized, gin.H{"status": "unauthorized"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"status": "group successfully created"})
+	})
 	r.GET("/users/:username/mailbox", func(c *gin.Context) {
 		username := c.Param("username")
 		c.JSON(http.StatusOK, gin.H{
@@ -59,4 +74,9 @@ type Recipient interface {
 
 type User struct {
 	Username string `json:"username"`
+}
+
+type GroupCreation struct {
+	GroupName string   `json:"groupname"`
+	Usernames []string `json:"usernames"`
 }
