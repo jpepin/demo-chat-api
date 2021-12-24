@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -37,7 +38,18 @@ func (m MessagesT) Send(db *gorm.DB, c *gin.Context) {
 	switch {
 	case m.UserRecipient != "":
 		CreateMessageForUser(m.UserRecipient, db, &m, c)
-		// TODO: handle groups
+	case m.GroupRecipient != "":
+		for _, member := range m.FindGroupMembers(db, c) {
+			// each user needs their own message
+			var userMessage MessagesT
+			userMessage.Sender = m.Sender
+			userMessage.Subject = m.Subject
+			userMessage.Body = m.Body
+			userMessage.CreatedAt = m.CreatedAt
+			username := member.Username
+			userMessage.UserRecipient = username
+			CreateMessageForUser(username, db, &userMessage, c)
+		}
 	}
 }
 
@@ -51,16 +63,37 @@ func (m MessagesT) Reply(db *gorm.DB, c *gin.Context) {
 
 	// check if it was a group message
 	if originalMessage.GroupRecipient != "" {
-		// TODO look up group members and add
+		// look up group members and add
 		m.GroupRecipient = originalMessage.GroupRecipient
+		groupMembers := m.FindGroupMembers(db, c)
+		for _, member := range groupMembers {
+			replyTo[member.Username] = true
+		}
 	}
 	replyTo[originalMessage.Sender] = true
 
 	// send message back to sender(s) and/or group
 	for replyToUser := range replyTo {
-		m.UserRecipient = replyToUser
-		CreateMessageForUser(replyToUser, db, &m, c)
+		// each user needs their own message
+		var userMessage MessagesT
+		userMessage.Sender = m.Sender
+		userMessage.Subject = m.Subject
+		userMessage.Body = m.Body
+		userMessage.CreatedAt = m.CreatedAt
+		userMessage.SentAt = m.SentAt
+		userMessage.UserRecipient = replyToUser
+		CreateMessageForUser(replyToUser, db, &userMessage, c)
 	}
+}
+
+func (m MessagesT) FindGroupMembers(db *gorm.DB, c *gin.Context) []UserGroup {
+	var groupMembers []UserGroup
+	result := db.Where("group_name = ?", m.GroupRecipient).Find(&groupMembers)
+	if result.Error != nil {
+		// of course we wouldn't return the raw error in a prod env
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "problem finding group messages: " + result.Error.Error()})
+	}
+	return groupMembers
 }
 
 func FromComposedMessage(cm ComposedMessage) MessagesT {

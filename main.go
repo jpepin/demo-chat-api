@@ -74,8 +74,8 @@ func main() {
 				GroupName: json.GroupName,
 				Username:  username,
 			}
-			db.Create(&userGroupMembership)
-			if result.Error != nil {
+			userResult := db.Create(&userGroupMembership)
+			if userResult.Error != nil {
 				// of course we wouldn't return the raw error in a prod env
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "problem adding user to group: " + result.Error.Error()})
 				return
