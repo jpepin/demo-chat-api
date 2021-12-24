@@ -46,6 +46,7 @@ func main() {
 
 		c.JSON(http.StatusOK, newUser)
 	})
+
 	// curl -d '{"usernames": ["manu"], "groupname": "group1"}' -H "Content-Type: application/json" -X POST localhost:8080/groups
 	r.POST("/groups", func(c *gin.Context) {
 		var json GroupCreation
@@ -74,41 +75,23 @@ func main() {
 		m.Body = cm.Body
 		m.Subject = cm.Subject
 		m.Sender = cm.Sender
+		// quick and dirty check for type
 		if cm.Recipient.Username != "" {
 			m.UserRecipient = cm.Recipient.Username
 		} else {
 			m.GroupRecipient = cm.Recipient.Groupname
 		}
-
 		m.SentAt = time.Now()
-
-		db.Create(&m)
 
 		// send message to recipient(s)
 		switch {
 		case m.UserRecipient != "":
-			var user UsersT
-			db.Where("username = ?", m.UserRecipient).Find(&user)
-
-			// Start Association Mode
-			db.Model(&user).Association("Messages")
-			// `user` is the source model, it must contain primary key
-			// `Messages` is a relationship's field name
-			// If the above two requirements matched, the AssociationMode should be started successfully, or it should return error
-			if db.Model(&user).Association("Messages").Error != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "problem fetching messages"})
-				return
-			}
-
-			db.Model(&user).Association("Messages").Append(&m)
-
+			CreateMessageForUser(m.UserRecipient, db, &m, c)
 			// TODO: handle groups
 		}
-
-		c.JSON(http.StatusOK, m)
 	})
 
-	// curl -d '{"sender": "Jolene", "recipient": {"username": "manu"}, "subject": "test subject", "body": "hello there"}' -H "Content-Type: application/json" -X POST localhost:8080/messages/2/replies
+	// curl -d '{"sender": "manu", "subject": "re:test subject", "body": "sorry, just saw this"}' -H "Content-Type: application/json" -X POST localhost:8080/messages/4/replies
 	r.POST("/messages/:id/replies", func(c *gin.Context) {
 		var replyMsg ReplyMessage
 		msgID := c.Param("id")
@@ -123,31 +106,33 @@ func main() {
 			return
 		}
 
+		// set up response
 		var m MessagesT
 		m.Body = replyMsg.Body
 		// set the reply id for the message being replied to
 		m.RE = mID
 		m.SentAt = time.Now()
+		m.Sender = replyMsg.Sender
 
-		db.Create(&m)
-
-		// send message to sender
-		var user UsersT
-		db.Where("username = ?", replyMsg.Sender).Find(&user)
-
-		// Start Association Mode
-		db.Model(&user).Association("Messages")
-		// `user` is the source model, it must contain primary key
-		// `Messages` is a relationship's field name
-		// If the above two requirements matched, the AssociationMode should be started successfully, or it should return error
-		if db.Model(&user).Association("Messages").Error != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "problem fetching messages"})
+		// find sender of original message
+		originalMessage, err := GetMessage(mID, db, c)
+		if err != nil {
 			return
 		}
+		replyTo := make(map[string]bool)
+		// TODO: check if it was group message
 
-		db.Model(&user).Association("Messages").Append(&m)
+		if originalMessage.GroupRecipient != "" {
+			// TODO look up group members and add
+			m.GroupRecipient = originalMessage.GroupRecipient
+		}
+		replyTo[originalMessage.Sender] = true
 
-		c.JSON(http.StatusOK, m)
+		// send message back to sender(s) and/or group
+		for replyToUser := range replyTo {
+			m.UserRecipient = replyToUser
+			CreateMessageForUser(replyToUser, db, &m, c)
+		}
 	})
 
 	// curl localhost:8080/messages/2
@@ -159,19 +144,11 @@ func main() {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "id must be an integer: " + err.Error()})
 			return
 		}
-
-		var m MessagesT
-		result := db.First(&m, mID)
-
-		if result.Error != nil {
-			if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-				c.JSON(http.StatusNotFound, gin.H{"message": fmt.Sprintf("message id %d not found", mID)})
-				return
-			}
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "problem fetching record"})
+		m, err := GetMessage(mID, db, c)
+		// we've already updated the response with the error
+		if err != nil {
 			return
 		}
-
 		c.JSON(http.StatusOK, m)
 	})
 
@@ -197,7 +174,7 @@ func main() {
 		// Start Association Mode
 		var user UsersT
 
-		db.Where("username = ?", username).Find(&user)
+		db.Where("user_name = ?", username).Find(&user)
 		db.Model(&user).Association("Messages")
 		// `user` is the source model, it must contain primary key
 		// `Messages` is a relationship's field name
@@ -236,18 +213,6 @@ type Recipient struct {
 	Groupname string `json:"groupname"`
 }
 
-// type UserRecipient struct {
-// 	// description:	A message recipient representing a single user
-// 	username string
-// 	// example: andrew.meredith
-// }
-
-// type GroupRecipient struct {
-// 	// description: A message recipient representing a group of users
-// 	groupname string
-// 	// example: quantummetric
-// }
-
 type User struct {
 	Username string `json:"username"`
 }
@@ -274,4 +239,38 @@ type ReplyMessage struct {
 	// example: Lunch Plans
 	Body string `json:"body"`
 	// example: Want to grab something around noon this Friday?
+}
+
+func CreateMessageForUser(recipient string, db *gorm.DB, m *MessagesT, c *gin.Context) {
+	var user UsersT
+	db.Where("user_name = ?", recipient).Find(&user)
+
+	// Start Association Mode
+	db.Model(&user).Association(MessagesKey)
+	// `user` is the source model, it must contain primary key
+	// `Messages` is a relationship's field name
+	// If the above two requirements matched, the AssociationMode should be started successfully, or it should return error
+	if assocErr := db.Model(&user).Association(MessagesKey).Error; assocErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("problem with association: %s", assocErr.Error())})
+		return
+	}
+
+	db.Model(&user).Association(MessagesKey).Append(m)
+	db.Save(&user)
+	c.JSON(http.StatusOK, m)
+}
+
+// GetMessage retrieves a message by id
+func GetMessage(messageID int, db *gorm.DB, c *gin.Context) (MessagesT, error) {
+	var m MessagesT
+	result := db.First(&m, messageID)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"message": fmt.Sprintf("message id %d not found", messageID)})
+			return m, result.Error
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("problem fetching record: %s", result.Error.Error())})
+		return m, result.Error
+	}
+	return m, nil
 }
