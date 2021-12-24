@@ -33,8 +33,8 @@ type MessagesT struct {
 	UsersTID uint
 }
 
+// send message to recipient(s)
 func (m MessagesT) Send(db *gorm.DB, c *gin.Context) {
-	// send message to recipient(s)
 	switch {
 	case m.UserRecipient != "":
 		CreateMessageForUser(m.UserRecipient, db, &m, c)
@@ -141,7 +141,7 @@ type UsersT struct {
 
 func DBSetup() *gorm.DB {
 	// refer https://github.com/go-sql-driver/mysql#dsn-data-source-name for details
-	dsn := "root:my-secret-pw@tcp(127.0.0.1:3306)/app?charset=utf8mb4&parseTime=True&loc=Local"
+	dsn := "root:my-secret-pw@(message-mysql:3306)/app?charset=utf8mb4&parseTime=True&loc=Local"
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
 	if err != nil {
 		panic("failed to connect database")
