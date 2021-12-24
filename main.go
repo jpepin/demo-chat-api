@@ -4,12 +4,17 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
 func main() {
 	r := gin.Default()
+
+	// set up db
+	db := DBSetup()
+
 	r.GET("/ping", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"message": "pong",
@@ -17,7 +22,6 @@ func main() {
 	})
 	// curl -d '{"username": "manu", "password": "123"}' -H "Content-Type: application/json" -X POST localhost:8080/users
 	r.POST("/users", func(c *gin.Context) {
-		// Example for binding JSON ({"user": "manu", "password": "123"})
 		var json User
 		if err := c.ShouldBindJSON(&json); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -55,9 +59,16 @@ func main() {
 			return
 		}
 
-		var m Message
+		var m MessagesT
 		m.Body = cm.Body
-		m.Recipient.Username = cm.Recipient.Username
+		// TODO: handle groups
+		m.Recipient = cm.Recipient.Username
+		m.SentAt = time.Now()
+
+		db.Create(&m)
+
+		// TODO: send message to recipient(s)
+
 		c.JSON(http.StatusOK, m)
 	})
 
@@ -76,9 +87,16 @@ func main() {
 			return
 		}
 
-		var m Message
+		var m MessagesT
 		m.Body = replyMsg.Body
-		m.ID = mID
+		// set the reply id for the message being replied to
+		m.RE = mID
+		m.SentAt = time.Now()
+
+		db.Create(&m)
+
+		// TODO: send message to sender
+
 		c.JSON(http.StatusOK, m)
 	})
 
@@ -90,9 +108,9 @@ func main() {
 			return
 		}
 
-		var m Message
-		m.Body = "fake body"
-		m.Recipient.Username = "someone"
+		var m MessagesT
+		db.First(&m, msgID)
+
 		c.JSON(http.StatusOK, m)
 	})
 
