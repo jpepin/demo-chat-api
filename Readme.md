@@ -1,3 +1,5 @@
+[![Go PR](https://github.com/jpepin/demo-chat-api/actions/workflows/go.yml/badge.svg)](https://github.com/jpepin/demo-chat-api/actions/workflows/go.yml)
+
 # Overview
 
 Simple, extremely not production-ready toy messaging app in Go for the purposes of testing out frameworks and orms.
