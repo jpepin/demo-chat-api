@@ -61,6 +61,10 @@ type ReplyMessage struct {
 func CreateMessageForUser(recipient string, db *gorm.DB, m *MessagesT, c *gin.Context) {
 	var user UsersT
 	db.Where("user_name = ?", recipient).Find(&user)
+	if user.CreatedAt.IsZero() {
+		c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("user %s not found", recipient)})
+		return
+	}
 
 	// Start Association Mode
 	db.Model(&user).Association(MessagesKey)
