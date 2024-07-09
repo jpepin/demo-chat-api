@@ -27,4 +27,7 @@ build-and-run: network image run-message-api
 app-clean: 
 	- docker stop message-app && docker rm message-app
 
+kind-up:
+	- kind create cluster
+
 teardown: app-clean db-clean network-clean
