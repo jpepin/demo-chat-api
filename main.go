@@ -6,14 +6,20 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-sql-driver/mysql"
+	"gorm.io/gorm"
 )
 
 func main() {
 
 	// set up and migrate db
 	db := DBSetup()
-
 	r := setupRouter()
+	routes(r, db)
+
+	r.Run() // listen and serve on 0.0.0.0:8080 (for windows "localhost:8080")
+}
+
+func routes(r *gin.Engine, db *gorm.DB) {
 	// curl -d '{"username": "jolene"}' -H "Content-Type: application/json" -X POST localhost:8080/users
 	r.POST("/users", func(c *gin.Context) {
 		var json User
@@ -163,7 +169,6 @@ func main() {
 
 		c.JSON(http.StatusOK, messages)
 	})
-	r.Run() // listen and serve on 0.0.0.0:8080 (for windows "localhost:8080")
 }
 
 func setupRouter() *gin.Engine {
